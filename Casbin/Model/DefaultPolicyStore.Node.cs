@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Threading;
 
 namespace Casbin.Model;
@@ -12,7 +13,7 @@ public partial class DefaultPolicyStore
 
         public List<IPolicyValues> Policy = new();
         public Node(PolicyAssertion assertion) => _assertion = assertion;
-        public HashSet<string> PolicyTextSet { get; } = new();
+        internal ConcurrentDictionary<string, object> PolicyTextSet { get; } = new();
         public ReaderWriterLockSlim Lock { get; } = new();
 
         public void RefreshPolicyStringSet()
@@ -20,7 +21,7 @@ public partial class DefaultPolicyStore
             PolicyTextSet.Clear();
             foreach (IPolicyValues policy in GetPolicy())
             {
-                PolicyTextSet.Add(policy.ToText());
+                PolicyTextSet.TryAdd(policy.ToText(), null);
             }
         }
 
@@ -34,6 +35,7 @@ public partial class DefaultPolicyStore
             {
                 policyList.Add(policyValues);
             }
+            iterator.Interrupt();
 
             return policyList;
         }
@@ -42,7 +44,7 @@ public partial class DefaultPolicyStore
             Interlocked.Exchange(ref Policy, valuesList);
 
         public bool ContainsPolicy(IPolicyValues values)
-            => PolicyTextSet.Contains(values.ToText());
+            => PolicyTextSet.ContainsKey(values.ToText());
 
         public bool ValidatePolicy(IPolicyValues values)
         {
@@ -71,7 +73,10 @@ public partial class DefaultPolicyStore
                 return TryAddPolicyByPriority(values, index);
             }
 
-            Lock.EnterWriteLock();
+            if (!Lock.TryEnterWriteLock(1000))
+            {
+                throw new Exception("Lock.TryEnterWriteLock timeout");
+            }
             try
             {
                 Policy.Add(values);
@@ -81,7 +86,7 @@ public partial class DefaultPolicyStore
                 Lock.ExitWriteLock();
             }
 
-            PolicyTextSet.Add(values.ToText());
+            PolicyTextSet.TryAdd(values.ToText(), null);
             return true;
         }
 
@@ -97,7 +102,10 @@ public partial class DefaultPolicyStore
                 return false;
             }
 
-            Lock.EnterWriteLock();
+            if (!Lock.TryEnterWriteLock(1000))
+            {
+                throw new Exception("Lock.TryEnterWriteLock timeout");
+            }
             try
             {
                 for (int i = 0; i < Policy.Count; i++)
@@ -110,8 +118,8 @@ public partial class DefaultPolicyStore
 
                     Policy.RemoveAt(i);
                     Policy.Insert(i, newValues);
-                    PolicyTextSet.Remove(oldValues.ToText());
-                    PolicyTextSet.Add(newValues.ToText());
+                    PolicyTextSet.Remove(oldValues.ToText(), out var _);
+                    PolicyTextSet.TryAdd(newValues.ToText(), null);
                     return true;
                 }
             }
@@ -130,7 +138,10 @@ public partial class DefaultPolicyStore
                 return false;
             }
 
-            Lock.EnterWriteLock();
+            if (!Lock.TryEnterWriteLock(1000))
+            {
+                throw new Exception("Lock.TryEnterWriteLock timeout");
+            }
             try
             {
                 for (int i = 0; i < Policy.Count; i++)
@@ -142,7 +153,7 @@ public partial class DefaultPolicyStore
                     }
 
                     Policy.RemoveAt(i);
-                    PolicyTextSet.Remove(values.ToText());
+                    PolicyTextSet.Remove(values.ToText(), out var _);
                     return true;
                 }
             }
@@ -160,81 +171,6 @@ public partial class DefaultPolicyStore
             PolicyTextSet.Clear();
         }
 
-        private bool TrySortPoliciesByPriority()
-        {
-            if (_assertion.TryGetPriorityIndex(out int priorityIndex) is false)
-            {
-                return false;
-            }
-
-            int PolicyComparison(IPolicyValues p1, IPolicyValues p2)
-            {
-                string priorityString1 = p1[priorityIndex];
-                string priorityString2 = p2[priorityIndex];
-
-                if (int.TryParse(priorityString1, out int priority1) is false
-                    || int.TryParse(priorityString2, out int priority2) is false)
-                {
-                    return string.CompareOrdinal(priorityString1, priorityString2);
-                }
-
-                return priority1 - priority2;
-            }
-
-            Lock.EnterWriteLock();
-            try
-            {
-                Policy.Sort(PolicyComparison);
-            }
-            finally
-            {
-                Lock.ExitWriteLock();
-            }
-
-            return true;
-        }
-
-        private bool TrySortPoliciesBySubjectHierarchy(Dictionary<string, int> subjectHierarchyMap)
-        {
-            if (_assertion.TryGetDomainIndex(out int domainIndex) is false)
-            {
-                domainIndex = -1;
-            }
-
-            if (_assertion.TryGetSubjectIndex(out int subjectIndex) is false)
-            {
-                return false;
-            }
-
-            int PolicyComparison(IPolicyValues p1, IPolicyValues p2)
-            {
-                string domain1 = "", domain2 = "";
-                if (domainIndex != -1)
-                {
-                    domain1 = p1[domainIndex];
-                    domain2 = p2[domainIndex];
-                }
-
-                string name1 = RoleAssertion.GetNameWithDomain(domain1, p1[subjectIndex]);
-                string name2 = RoleAssertion.GetNameWithDomain(domain2, p2[subjectIndex]);
-
-                return subjectHierarchyMap[name1] - subjectHierarchyMap[name2];
-            }
-
-
-            Lock.EnterWriteLock();
-            try
-            {
-                Policy.Sort(PolicyComparison);
-            }
-            finally
-            {
-                Lock.ExitWriteLock();
-            }
-
-            return true;
-        }
-
         private bool TryAddPolicyByPriority(IPolicyValues values, int priorityIndex)
         {
             if (int.TryParse(values[priorityIndex], out int priority) is false)
@@ -247,7 +183,10 @@ public partial class DefaultPolicyStore
                 return int.Parse(v[priorityIndex]) <= priority;
             }
 
-            Lock.EnterWriteLock();
+            if (!Lock.TryEnterWriteLock(1000))
+            {
+                throw new Exception("Lock.TryEnterWriteLock timeout");
+            }
             try
             {
                 int lastIndex = Policy.FindLastIndex(LastLessOrEqualPriority);
@@ -258,7 +197,7 @@ public partial class DefaultPolicyStore
                 Lock.ExitWriteLock();
             }
 
-            PolicyTextSet.Add(values.ToText());
+            PolicyTextSet.TryAdd(values.ToText(), null);
             return true;
         }
 
@@ -284,7 +223,10 @@ public partial class DefaultPolicyStore
                 return priority1 - priority2;
             }
 
-            Lock.EnterWriteLock();
+            if (!Lock.TryEnterWriteLock(1000))
+            {
+                throw new Exception("Lock.TryEnterWriteLock timeout");
+            }
             try
             {
                 Policy.Sort(PolicyComparison);
@@ -326,7 +268,10 @@ public partial class DefaultPolicyStore
                 return subjectHierarchyMap[name1] - subjectHierarchyMap[name2];
             }
 
-            Lock.EnterWriteLock();
+            if (!Lock.TryEnterWriteLock(1000))
+            {
+                throw new Exception("Lock.TryEnterWriteLock timeout");
+            }
             try
             {
                 Policy.Sort(PolicyComparison);

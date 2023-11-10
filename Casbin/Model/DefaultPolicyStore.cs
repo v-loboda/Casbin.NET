@@ -120,7 +120,7 @@ namespace Casbin.Model
                 {
                     effectPolicies ??= new List<IPolicyValues>();
                     effectPolicies.Add(values);
-                    node.PolicyTextSet.Remove(values.ToText());
+                    node.PolicyTextSet.Remove(values.ToText(), out _);
                 }
                 else
                 {

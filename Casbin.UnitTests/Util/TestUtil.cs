@@ -32,7 +32,7 @@ public static class TestUtil
     internal static void TestParallelBatchEnforce<T>(Enforcer e, IEnumerable<(T, bool)> values) where T : IRequestValues =>
         Assert.True(values.Select(x => x.Item2).SequenceEqual(e.ParallelBatchEnforce(values.Select(x => x.Item1).ToList())));
 
-    internal static async void TestBatchEnforceAsync<T>(IEnforcer e, IEnumerable<(T, bool)> values) where T : IRequestValues 
+    internal static async void TestBatchEnforceAsync<T>(IEnforcer e, IEnumerable<(T, bool)> values) where T : IRequestValues
     {
 #if !NET452
         var res = e.BatchEnforceAsync(values.Select(x => x.Item1));
@@ -60,17 +60,17 @@ public static class TestUtil
 
     internal static async Task TestEnforceWithMatcherAsync<T1, T2, T3>(this IEnforcer e, string matcher, T1 sub, T2 obj,
         T3 act, bool res) => Assert.Equal(res, await e.EnforceWithMatcherAsync(matcher, sub, obj, act));
-    
-    internal static void TestBatchEnforceWithMatcher<T>(this IEnforcer e, string matcher, IEnumerable<(T, bool)> values) 
-        where T : IRequestValues => 
+
+    internal static void TestBatchEnforceWithMatcher<T>(this IEnforcer e, string matcher, IEnumerable<(T, bool)> values)
+        where T : IRequestValues =>
             Assert.True(values.Select(x => x.Item2).SequenceEqual(e.BatchEnforceWithMatcher(matcher, values.Select(x => x.Item1))));
 
-    internal static void TestBatchEnforceWithMatcherParallel<T>(this Enforcer e, string matcher, IEnumerable<(T, bool)> values) 
-        where T : IRequestValues => 
+    internal static void TestBatchEnforceWithMatcherParallel<T>(this Enforcer e, string matcher, IEnumerable<(T, bool)> values)
+        where T : IRequestValues =>
             Assert.True(values.Select(x => x.Item2).SequenceEqual(e.BatchEnforceWithMatcherParallel<T>(matcher, values.Select(x => x.Item1).ToList())));
 
-    internal static async void TestBatchEnforceWithMatcherAsync<T>(IEnforcer e, string matcher, IEnumerable<(T, bool)> values) 
-        where T : IRequestValues 
+    internal static async void TestBatchEnforceWithMatcherAsync<T>(IEnforcer e, string matcher, IEnumerable<(T, bool)> values)
+        where T : IRequestValues
     {
 #if !NET452
         var res = e.BatchEnforceWithMatcherAsync(matcher, values.Select(x => x.Item1));
@@ -208,7 +208,9 @@ public static class TestUtil
     {
         IEnumerable<IEnumerable<string>> myRes = e.GetImplicitPermissionsForUser(name, domain);
         string message = "Implicit permissions for " + name + ": " + myRes + ", supposed to be " + res;
-        Assert.True(res.DeepEquals(myRes), message);
+
+        bool result = res.Select(x => string.Join(',', x)).OrderBy(x => x).DeepEquals(myRes.Select(x => string.Join(',', x)).OrderBy(x => x));
+        Assert.True(result, message);
     }
 
     internal static void TestHasPermission(IEnforcer e, string name, List<string> permission, bool res)

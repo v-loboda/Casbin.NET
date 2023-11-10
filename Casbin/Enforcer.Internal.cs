@@ -70,24 +70,51 @@ public partial class Enforcer
         IExpressionHandler expressionHandler = Model.ExpressionHandler;
         PolicyScanner<TRequest> scanner = context.View.PolicyAssertion.Scan(in requestValues);
 
-        EffectChain effectChain = new();
-        if (Effector is IChainEffector effector)
+        try
         {
-            session.IsChainEffector = true;
-            effectChain = effector.CreateChain(context.View.Effect, context.View.EffectExpressionType);
-        }
-
-        session.HasNextPolicy = scanner.HasNext();
-        HandleInitialRequest(in context, ref session, in requestValues);
-
-        if (context.View.HasPolicyParameter && session.HasNextPolicy)
-        {
-            int policyIndex = 0;
-            while (scanner.GetNext(out IPolicyValues outValues))
+            EffectChain effectChain = new();
+            if (Effector is IChainEffector effector)
             {
-                TPolicy policyValues = (TPolicy)outValues;
-                session.PolicyIndex = policyIndex;
+                session.IsChainEffector = true;
+                effectChain = effector.CreateChain(context.View.Effect, context.View.EffectExpressionType);
+            }
 
+            session.HasNextPolicy = scanner.HasNext();
+            HandleInitialRequest(in context, ref session, in requestValues);
+
+            if (context.View.HasPolicyParameter && session.HasNextPolicy)
+            {
+                int policyIndex = 0;
+                while (scanner.GetNext(out IPolicyValues outValues))
+                {
+                    TPolicy policyValues = (TPolicy)outValues;
+                    session.PolicyIndex = policyIndex;
+
+                    HandleBeforeExpression(in context, ref session, in effectChain, in requestValues, policyValues);
+                    session.ExpressionResult = expressionHandler.Invoke(in context, session.ExpressionString,
+                        in requestValues, in policyValues);
+
+                    if (session.IsChainEffector)
+                    {
+                        HandleExpressionResult(in context, ref session, ref effectChain, in requestValues, policyValues);
+                    }
+                    else
+                    {
+                        HandleExpressionResult(in context, ref session, Effector, in requestValues, policyValues);
+                    }
+
+                    if (session.Determined)
+                    {
+                        scanner.Interrupt();
+                        break;
+                    }
+
+                    policyIndex++;
+                }
+            }
+            else
+            {
+                DummyPolicyValues policyValues = DummyPolicyValues.Empty;
                 HandleBeforeExpression(in context, ref session, in effectChain, in requestValues, policyValues);
                 session.ExpressionResult = expressionHandler.Invoke(in context, session.ExpressionString,
                     in requestValues, in policyValues);
@@ -100,32 +127,13 @@ public partial class Enforcer
                 {
                     HandleExpressionResult(in context, ref session, Effector, in requestValues, policyValues);
                 }
-
-                if (session.Determined)
-                {
-                    scanner.Interrupt();
-                    break;
-                }
-
-                policyIndex++;
             }
         }
-        else
+        finally
         {
-            DummyPolicyValues policyValues = DummyPolicyValues.Empty;
-            HandleBeforeExpression(in context, ref session, in effectChain, in requestValues, policyValues);
-            session.ExpressionResult = expressionHandler.Invoke(in context, session.ExpressionString,
-                in requestValues, in policyValues);
-
-            if (session.IsChainEffector)
-            {
-                HandleExpressionResult(in context, ref session, ref effectChain, in requestValues, policyValues);
-            }
-            else
-            {
-                HandleExpressionResult(in context, ref session, Effector, in requestValues, policyValues);
-            }
+            scanner.Interrupt();
         }
+
 
         return session.EnforceResult;
     }

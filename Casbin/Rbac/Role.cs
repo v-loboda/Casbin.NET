@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -9,7 +10,7 @@ namespace Casbin.Rbac
     /// </summary>
     public class Role
     {
-        private readonly Lazy<Dictionary<string, Role>> _roles = new();
+        private readonly Lazy<ConcurrentDictionary<string, Role>> _roles = new();
 
         public Role(string name)
         {
@@ -30,7 +31,7 @@ namespace Casbin.Rbac
         {
             if (_roles.IsValueCreated is false)
             {
-                _roles.Value.Add(role.Name, role);
+                _roles.Value.TryAdd(role.Name, role);
             }
 
             if (_roles.Value.ContainsKey(role.Name))
@@ -38,7 +39,7 @@ namespace Casbin.Rbac
                 return;
             }
 
-            _roles.Value.Add(role.Name, role);
+            _roles.Value.TryAdd(role.Name, role);
         }
 
         public void DeleteRole(Role role)
@@ -50,7 +51,7 @@ namespace Casbin.Rbac
 
             if (_roles.Value.ContainsKey(role.Name))
             {
-                _roles.Value.Remove(role.Name);
+                _roles.Value.Remove(role.Name, out _);
             }
         }
 
@@ -86,7 +87,7 @@ namespace Casbin.Rbac
                 return _roles.Value.ContainsKey(name);
             }
 
-            
+
             foreach (var role in _roles.Value.Values)
             {
                 if (name == role.Name || matchingFunc(role.Name, name) && role.Name != name)

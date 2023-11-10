@@ -5,17 +5,15 @@ public partial class DefaultPolicyStore
     internal ref struct Iterator
     {
         private int _index;
-        private readonly int _size;
         private readonly Node _node;
 
         internal Iterator(Node node)
         {
             _node = node;
             _index = 0;
-            _size = node.Policy.Count;
         }
 
-        public bool HasNext() => _index < _size;
+        public bool HasNext() => _index < _node.Policy.Count;
 
         public bool GetNext(out IPolicyValues values)
         {
@@ -30,7 +28,7 @@ public partial class DefaultPolicyStore
                 _node.Lock.EnterReadLock();
             }
 
-            if (_index < _size)
+            if (_index < _node.Policy.Count)
             {
                 values = _node.Policy[_index++];
                 return true;
